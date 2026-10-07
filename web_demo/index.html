@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyword Spotting Demo</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin-top: 50px; }
+        .container { text-align: center; max-width: 600px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+        #result { font-size: 24px; font-weight: bold; margin-top: 30px; color: #333; }
+        #status { color: #666; margin-top: 10px; }
+    </style>
+    <!-- Load ONNX Runtime Web from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Keyword Spotting</h1>
+        <p>Press start and say a keyword: yes, no, up, down, left, right, on, off, stop, go.</p>
+        <button id="record-btn">Start Microphone</button>
+        <div id="status">Status: Ready</div>
+        <div id="result">Waiting...</div>
+    </div>
+
+    <script>
+        let isRecording = false;
+        let audioContext;
+        let session;
+
+        async function initModel() {
+            try {
+                // TODO: Load the exported ONNX model
+                // session = await ort.InferenceSession.create('./model.onnx');
+                document.getElementById('status').innerText = 'Status: Model Loaded (TODO)';
+            } catch (e) {
+                console.error(e);
+                document.getElementById('status').innerText = 'Error loading model';
+            }
+        }
+
+        async function toggleRecording() {
+            if (isRecording) {
+                isRecording = false;
+                document.getElementById('record-btn').innerText = 'Start Microphone';
+                document.getElementById('status').innerText = 'Status: Stopped';
+                if (audioContext) {
+                    await audioContext.close();
+                }
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    const source = audioContext.createMediaStreamSource(stream);
+                    
+                    // TODO: Implement audio processing node (ScriptProcessor or AudioWorklet)
+                    // TODO: Extract features (e.g., MFCC/Mel Spectrogram)
+                    // TODO: Run inference using `session.run()`
+                    
+                    isRecording = true;
+                    document.getElementById('record-btn').innerText = 'Stop Microphone';
+                    document.getElementById('status').innerText = 'Status: Listening...';
+                } catch (err) {
+                    console.error('Error accessing microphone:', err);
+                    document.getElementById('status').innerText = 'Microphone access denied';
+                }
+            }
+        }
+
+        document.getElementById('record-btn').addEventListener('click', toggleRecording);
+        initModel();
+    </script>
+</body>
+</html>

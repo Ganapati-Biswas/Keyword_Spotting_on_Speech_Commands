@@ -1,0 +1,34 @@
+# Data
+data/
+speech_commands_v0.02.tar.gz
+
+# Experiments
+experiments/*
+!experiments/.gitkeep
+!experiments/**/*.yaml
+*.pt
+*.pth
+*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
+
+# TensorBoard
+runs/
