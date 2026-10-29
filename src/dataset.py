@@ -2,8 +2,21 @@ import os
 import glob
 import random
 import torchaudio
+import soundfile as sf
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+def load_audio(path):
+    try:
+        return torchaudio.load(path)
+    except Exception:
+        data, sr = sf.read(path, dtype='float32')
+        waveform = torch.from_numpy(data)
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+        else:
+            waveform = waveform.t()
+        return waveform, sr
 
 class SpeechCommandsDataset(Dataset):
     TARGET_WORDS = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
@@ -39,7 +52,7 @@ class SpeechCommandsDataset(Dataset):
             if word == '_background_noise_':
                 noise_files = glob.glob(os.path.join(data_dir, word, '*.wav'))
                 for nf in noise_files:
-                    waveform, sr = torchaudio.load(nf)
+                    waveform, sr = load_audio(nf)
                     if sr != self.SAMPLE_RATE:
                         waveform = torchaudio.transforms.Resample(sr, self.SAMPLE_RATE)(waveform)
                     self.background_noise.append(waveform[0])
@@ -102,7 +115,7 @@ class SpeechCommandsDataset(Dataset):
         if path == 'silence':
             waveform = self._get_silence()
         else:
-            waveform, sr = torchaudio.load(path)
+            waveform, sr = load_audio(path)
             if sr != self.SAMPLE_RATE:
                 waveform = torchaudio.transforms.Resample(sr, self.SAMPLE_RATE)(waveform)
             if waveform.shape[1] < self.SAMPLE_RATE:

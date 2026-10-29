@@ -11,7 +11,11 @@ from utils import set_seed, create_experiment_dir, save_config, get_git_hash, Av
 
 def train(args):
     set_seed(args.seed)
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    device = torch.device(
+        args.device if torch.cuda.is_available()
+        else 'mps' if torch.backends.mps.is_available()
+        else 'cpu'
+    )
     
     exp_dir = create_experiment_dir('runs', args.experiment_name)
     logger = get_logger('train', os.path.join(exp_dir, 'train.log'))

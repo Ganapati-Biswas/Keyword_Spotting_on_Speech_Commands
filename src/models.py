@@ -4,28 +4,29 @@ import torch.nn as nn
 class BaselineCNN(nn.Module):
     def __init__(self, num_classes=12):
         super().__init__()
+        # Input: (B, 1, H, W)
         self.features = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),  # (B, 16, H, W)
+            nn.BatchNorm2d(16),                           # (B, 16, H, W)
+            nn.ReLU(),                                    # (B, 16, H, W)
+            nn.MaxPool2d(2),                              # (B, 16, H/2, W/2)
             
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # (B, 32, H/2, W/2)
+            nn.BatchNorm2d(32),                            # (B, 32, H/2, W/2)
+            nn.ReLU(),                                     # (B, 32, H/2, W/2)
+            nn.MaxPool2d(2),                               # (B, 32, H/4, W/4)
             
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # (B, 64, H/4, W/4)
+            nn.BatchNorm2d(64),                            # (B, 64, H/4, W/4)
+            nn.ReLU(),                                     # (B, 64, H/4, W/4)
+            nn.MaxPool2d(2)                                # (B, 64, H/8, W/8)
         )
-        self.classifier = nn.Linear(64, num_classes)
+        self.classifier = nn.Linear(64, num_classes)       # (B, num_classes)
 
     def forward(self, x):
-        x = self.features(x)
-        x = x.mean(dim=[2, 3]) # Global Avg Pool
-        x = self.classifier(x)
+        x = self.features(x)        # (B, 64, H/8, W/8)
+        x = x.mean(dim=[2, 3])      # (B, 64) — Global Avg Pool
+        x = self.classifier(x)      # (B, num_classes)
         return x
 
 class DSCNN(nn.Module):

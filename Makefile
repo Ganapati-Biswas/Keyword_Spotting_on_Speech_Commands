@@ -28,6 +28,12 @@ benchmark:
 demo:
 	cd web_demo && uv run python -m http.server 8000
 
+live:
+	PYTHONPATH=src uv run python src/live_inference.py --mode stream
+
+live-record:
+	PYTHONPATH=src uv run python src/live_inference.py --mode record
+
 clean:
 	rm -rf .venv
 	rm -rf __pycache__
