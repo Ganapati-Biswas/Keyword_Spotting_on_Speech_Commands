@@ -72,6 +72,41 @@ Rough accuracy ranges below are **sanity ranges for your pipeline on 12-class v2
 ### Rung A1: Baseline CNN
 **Idea:** three conv blocks (conv → BN → ReLU → max-pool), global average pooling, linear classifier.
 
+#### Architecture Diagram: Baseline CNN
+```mermaid
+flowchart TD
+    In["Input Log-Mel Spectrogram<br/><code>[B, 1, F=40, T=98]</code>"] --> B1
+
+    subgraph B1["Block 1 (Channels: 16)"]
+        direction TB
+        C1["Conv2d 3x3, pad 1<br/><code>[B, 16, 40, 98]</code>"] --> BN1["BatchNorm2d"]
+        BN1 --> R1["ReLU"]
+        R1 --> P1["MaxPool2d 2x2<br/><code>[B, 16, 20, 49]</code>"]
+    end
+
+    B1 --> B2
+
+    subgraph B2["Block 2 (Channels: 32)"]
+        direction TB
+        C2["Conv2d 3x3, pad 1<br/><code>[B, 32, 20, 49]</code>"] --> BN2["BatchNorm2d"]
+        BN2 --> R2["ReLU"]
+        R2 --> P2["MaxPool2d 2x2<br/><code>[B, 32, 10, 24]</code>"]
+    end
+
+    B2 --> B3
+
+    subgraph B3["Block 3 (Channels: 64)"]
+        direction TB
+        C3["Conv2d 3x3, pad 1<br/><code>[B, 64, 10, 24]</code>"] --> BN3["BatchNorm2d"]
+        BN3 --> R3["ReLU"]
+        R3 --> P3["MaxPool2d 2x2<br/><code>[B, 64, 5, 12]</code>"]
+    end
+
+    B3 --> GAP["Global Average Pooling (mean over F, T)<br/><code>[B, 64]</code>"]
+    GAP --> FC["Linear Classifier (64 -> 12)<br/><code>[B, 12]</code>"]
+    FC --> Out["Output Logits (12 Classes)"]
+```
+
 ```python
 import torch, torch.nn as nn
 
@@ -99,6 +134,44 @@ About 24K parameters (verify by hand: 144 + 4,608 + 18,432 conv weights + BN + 7
 
 ### Rung A2: DS-CNN (the standard tiny KWS model)
 **Idea:** replace standard 3×3 convs with **depthwise 3×3 + pointwise 1×1**. This gives the same receptive field growth at a fraction of the MACs, so you can afford more channels.
+
+#### Architecture Diagram: DS-CNN (Depthwise-Separable CNN)
+```mermaid
+flowchart TD
+    In["Input Log-Mel Spectrogram<br/><code>[B, 1, F=40, T=98]</code>"] --> Stem
+
+    subgraph Stem["Standard Conv Stem"]
+        direction TB
+        S_Conv["Conv2d (10x4), stride=(2,2)<br/><code>[B, C, 21, 49]</code>"] --> S_BN["BatchNorm2d"]
+        S_BN --> S_Act["ReLU"]
+    end
+
+    Stem --> B1
+
+    subgraph DSB["Depthwise-Separable Block (x N blocks)"]
+        direction TB
+        subgraph DW["Depthwise Stage (Spatial/Freq Filtering)"]
+            DW_Conv["Depthwise Conv2d 3x3 (groups=C)<br/>Channels filtered independently"] --> DW_BN["BatchNorm2d"]
+            DW_BN --> DW_Act["ReLU"]
+        end
+        subgraph PW["Pointwise Stage (Channel Mixing)"]
+            PW_Conv["Pointwise Conv2d 1x1<br/>Projects cross-channel information"] --> PW_BN["BatchNorm2d"]
+            PW_BN --> PW_Act["ReLU"]
+        end
+        DW --> PW
+    end
+
+    subgraph Blocks["N Sequential DSBlocks"]
+        B1["DSBlock 1<br/><code>[B, C, F1, T1]</code>"] --> B2["DSBlock 2<br/><code>[B, C, F2, T2]</code>"]
+        B2 --> BDots["..."]
+        BDots --> BN_Block["DSBlock N<br/><code>[B, C, FN, TN]</code>"]
+    end
+
+    BN_Block --> Drop["Dropout (p=0.1)"]
+    Drop --> GAP["Adaptive / Global AvgPool2d<br/><code>[B, C]</code>"]
+    GAP --> Head["Linear Classifier (C -> 12)<br/><code>[B, 12]</code>"]
+    Head --> Out["Output Logits (12 Classes)"]
+```
 
 **Hello Edge layout (adapt to your input):** one standard conv stem (kernel ≈ 10×4, stride 2×2), then N depthwise-separable blocks at constant width, then average pooling and a linear layer. The paper's small/medium/large variants differ in width (≈64/172/276) and depth (4/4/5 blocks). Note that the paper used 10 MFCC × 49 frames, so your 40-mel input needs a stem that handles that shape.
 
@@ -201,6 +274,43 @@ About 65K parameters (consistent with the ~66K the TC-ResNet8 paper reports).
 `out = x + f2(x) + broadcast( f1( avgpool_freq( f2(x) ) ) )`
 
 where `f2` is the frequency-wise depthwise conv with BN, and `f1` is temporal depthwise conv + BN + SiLU + pointwise conv + dropout.
+
+#### Architecture Diagram: Broadcasted Residual Network (BC-ResNet Block)
+```mermaid
+flowchart TD
+    In["Input Tensor <b>x</b><br/><code>[B, C, F, T]</code>"] --> SplitNode{"Split / Identity"}
+    
+    %% Main Path & Identity
+    SplitNode -->|"Identity Residual <b>x</b>"| AddFinal["Add: <b>x</b> + <b>f2(x)</b> + <b>Broadcast(...)</b>"]
+    
+    %% Frequency Processing f2
+    SplitNode --> F2_Conv["<b>f2: Frequency-wise Depthwise Conv</b><br/>Conv2d (3, 1), pad=(1,0), groups=C<br/><code>[B, C, F, T]</code>"]
+    F2_Conv --> F2_BN["BatchNorm2d"]
+    F2_BN --> SplitF2{"Branch f2(x)"}
+    
+    SplitF2 -->|"Residual component <b>f2(x)</b>"| AddFinal
+    
+    %% Frequency Pooling to 1D
+    SplitF2 --> PoolFreq["Average Pooling over Frequency (dim=2)<br/><code>[B, C, 1, T]</code>"]
+    
+    %% Temporal Processing f1
+    subgraph F1["<b>f1: Temporal Modelling Path</b>"]
+        direction TB
+        F1_Conv["Temporal Depthwise Conv2d (1, 3)<br/>dilation=(1, d), groups=C<br/><code>[B, C, 1, T]</code>"] --> F1_BN["BatchNorm2d"]
+        F1_BN --> F1_Act["SiLU Activation"]
+        F1_Act --> F1_PW["Pointwise 1x1 Conv (Channel Projection)<br/><code>[B, C, 1, T]</code>"]
+        F1_PW --> F1_Drop["Dropout2d"]
+    end
+    
+    PoolFreq --> F1_Conv
+    
+    %% Broadcast Back over Frequency
+    F1_Drop --> Broadcast["<b>Broadcast along Frequency axis</b><br/>Expand 1D -> 2D: <code>[B, C, 1, T] -> [B, C, F, T]</code>"]
+    Broadcast --> AddFinal
+    
+    AddFinal --> OutAct["ReLU Activation"]
+    OutAct --> Out["Output Tensor <code>[B, C, F, T]</code>"]
+```
 
 ```python
 class BCBlock(nn.Module):
